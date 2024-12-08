@@ -242,14 +242,21 @@ def main():
 
     # generate RSA keys
     for person in [alice, bob]:
+        # pick primes p & q and find their product, n
         person['rsa_n'] = person['rsaprimes'][0]*person['rsaprimes'][1]
         print(f"{person['name']} chose primes p:{person['rsaprimes'][0]} and q:{person['rsaprimes'][1]}, and finds their product, p*q=n:\n")
         print(f"\t{person['rsa_n']} \n\nThis n along with the public exponent e (65537) constitutes their public key.\n")
+
+        # find phi n = (p-1)(q-1)
         person['rsaphi'] = (person['rsaprimes'][0]-1)*(person['rsaprimes'][1]-1)
         print(f"Next, {person['name']} finds phi n. Since p and q were prime, phi n is just (p-1)(q-1):\n\n\t{person['rsaphi']}\n")
         print(f"Now {person['name']} must find the modular inverse of phi to establish their private key.")
+
+        # find the private key by deriving phi n's modular inverse
         person['rsa_d'] = mod_inverse(rsa_e, person['rsaphi'])
         print(f"{person['name']} derived the modular inverse of phi n: \n\n\t{person['rsa_d']} \n\nThis, along with n, constitutes their private key.\n")
+
+        # show the derived keys
         print(f"\t{person['name']}'s RSA Public Key (n, e): ({person['rsa_n']}, {rsa_e})")
         print(f"\t{person['name']}'s RSA Private Key (n, d): ({person['rsa_n']}, {person['rsa_d']})\n")
         prompt()
@@ -281,12 +288,14 @@ def main():
     print(f"\tPublic generator: {dh_gen} \n\tPublic modulus: {dh_mod}\n")
     prompt()
 
+    # have each person raise the generator to their private exponent and send the result
     for person in [alice, bob]:
         print(f"{person['name']} chooses {person['dhpriv']} as their private exponent.")
         person['dhpub'] = get_dh_pub(dh_gen, dh_mod, person['dhpriv'])
         print(f"They derive {person['dhpub']} using the modulus and generator and send it over the channel.\n")
         prompt()
 
+    # have each person arrive at the secret by raising what they received to their private exponent
     alice['dhsecret'] = get_dh_secret(dh_mod, bob.get("dhpub"), alice.get("dhpriv"))
     bob['dhsecret'] = get_dh_secret(dh_mod, alice.get("dhpub"), bob.get("dhpriv"))
 
@@ -297,6 +306,7 @@ def main():
 
     prompt()
     
+    # have each person derive an AES-128 session key using the KDF
     for person in [alice, bob]:
         person['dh_session_key'] = get_session_key(person['dhsecret'])
         print(f"{person['name']} used the shared secret to derive the symmetric AES-128 session key: \n\t{person['dh_session_key']}\n")
@@ -312,15 +322,21 @@ def main():
     print("Initiating message encryption and signing...")
     prompt()
 
-    # hash the message
-    # sign the hash
+    # encrypt the plaintext
+    # hash the plaintext
+    # sign the hash by encrypting with the private key
     for person in [alice, bob]:
+        # encrypt the message 
         person['cipher'] = encrypt_message(person['message'], person['dh_session_key'])
         print(f"{person['name']} encrypts their message using the session key to produce the ciphertext:\n")
         print(f"\tMessage: \n\t\t{person['message']}\n")
         print(f"\tCiphertext: \n\t\t{person['cipher']['ciphertext']}\n")
+
+        # hash the message into the digest
         person['digest'] = get_message_digest(person['message'], person['rsa_n'])
         print(f"Now {person['name']} hashes their message using SHA-256 to get the digest: \n\n\t{person['digest']}\n")
+
+        # encrypt the digest with the sender's RSA private key
         person['signature'] = signature(person['digest'], person['rsa_d'], person['rsa_n']) 
         print(f"Finally, {person['name']} encrypts the hashed digest h using their RSA private key n, d (h^d%n) to create this signature: \n\n\t{person['signature']}\n")
         person['sent'] = {
@@ -337,18 +353,18 @@ def main():
     ########################
 
     print(headers['sending'])
-    # send the message, the hash, and the initialization vector
 
     print('Now that Bob and Alice have encrypted and signed their messages, they exchange them...\n')
 
     prompt()
 
-
+    # send the message, the hash, and the initialization vector
     for person in [alice, bob]:
         print(f"{person['name']}:\n\n\tciphertext:{person['cipher']['ciphertext']}\n\n\tsignature:{person['signature']}\n")
         print('Message transmitted...')
         prompt()
 
+    # "deliver" the messages by placing the ciphertext and signature in the recipient's "received" key
     alice['received'] = bob['sent']
     bob['received'] = alice['sent']
 
@@ -366,26 +382,27 @@ def main():
         sig = person['received']['signature']
         n = person['received']['rsa_n']
         
+        # decrypt the received message
         decrypted = decrypt_message(iv, ct, person['dh_session_key'])
         print(f"{person['name']} used the symmetric AES-128 session key to decrypt this message:\n\t{decrypted}.\n")
         person['received']['decrypted'] = decrypted
         prompt()
 
         print(headers['authenticate'])
+
         # have the recipient hash the plaintext
-        
         digest = get_message_digest(decrypted, n)
         print(f"{person['name']} hashed the message using SHA-256 and got this digest:\n\n\t{digest}\n")
         person['received']['digest'] = digest
         prompt()
 
         # have the recipient decrypt the signature
-        # have the recipient compare their message digest to the decrypted signature
-
         auth = authenticate(sig, rsa_e, n)
         person['received']['authentication'] = auth
         print(f"{person['name']} decrypted the signature s they got with the message using the sender's public key n, e (s^e%n) to get this hash:")
         print(f"\n\t{sig} ^ {rsa_e} % {n} = {auth}\n")
+
+        # have the recipient compare their message digest to the decrypted signature
         if auth == digest:
             print(f"Signature matches the digest, message is authentic.")
         prompt()
