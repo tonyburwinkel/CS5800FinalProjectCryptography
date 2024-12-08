@@ -2,8 +2,11 @@
 A working demonstration of network cryptography protocols.
 
 Tony Burwinkel and Jean-Daniel Liwanga
+
 CS5800 Algorithms 
+
 Fall 2024
+
 Final Project - Safe & Secure Communications Over the Network
 
 Introduction
